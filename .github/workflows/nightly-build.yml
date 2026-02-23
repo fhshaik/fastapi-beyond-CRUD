@@ -29,8 +29,20 @@ jobs:
           pip install pytest
 
       - name: Run tests
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost/db
+          JWT_SECRET: test-secret
+          JWT_ALGORITHM: HS256
+          REDIS_URL: redis://localhost:6379/0
+          MAIL_USERNAME: test
+          MAIL_PASSWORD: test
+          MAIL_FROM: test@test.com
+          MAIL_PORT: "587"
+          MAIL_SERVER: smtp.test.com
+          MAIL_FROM_NAME: Test
+          DOMAIN: http://localhost:8000
         run: |
-          pytest
+          pytest src/tests/ -v
         # If tests fail, job stops here => no image pushed.
 
       - name: Set up Docker Buildx
@@ -43,7 +55,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Comp
+      - name: Compute tags
         id: meta
         run: |
           echo "DATE_TAG=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
