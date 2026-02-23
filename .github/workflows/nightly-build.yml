@@ -1,0 +1,79 @@
+name: Nightly - Test, Build, and Push Image
+
+on:
+  schedule:
+    - cron: "0 8 * * *"  # 12:00am America/Los_Angeles when on PST (UTC-8)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test-build-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run tests
+        run: |
+          pytest
+        # If tests fail, job stops here => no image pushed.
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comp
+        id: meta
+        run: |
+          echo "DATE_TAG=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
+
+      - name: Build and push (only after tests pass)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:nightly
+            ghcr.io/${{ github.repository }}:nightly-${{ steps.meta.outputs.DATE_TAG }}
+
+      - name: Email on failure (SendGrid)
+        if: failure()
+        run: |
+          curl -sS -X POST https://api.sendgrid.com/v3/mail/send \
+            -H "Authorization: Bearer $SENDGRID_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "personalizations": [{"to": [{"email": "'"$ALERT_EMAIL_TO"'"}]}],
+              "from": {"email": "'"$ALERT_EMAIL_FROM"'"},
+              "subject": "Nightly build failed",
+              "content": [{
+                "type": "text/plain",
+                "value": "Nightly failed. Repo: '"${{ github.repository }}"'. Run: '"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'"
+              }]
+            }'
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}

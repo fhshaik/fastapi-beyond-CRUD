@@ -1,0 +1,82 @@
+name: PR - Enforce Conventional Commits and Auto-Close
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  semantic-pr-title:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check PR title follows Conventional Commits
+        id: lint
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Examples: feat: ..., fix(api): ..., docs: ...
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+
+      - name: Comment + close PR on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const body = [
+              "❌ **PR closed: Conventional Commits required**",
+              "",
+              "Your PR title must follow Conventional Commits, e.g.:",
+              "- `feat: add user registration`",
+              "- `fix(auth): handle expired token`",
+              "",
+              "Please reopen with a corrected title."
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: pr.number, body
+            });
+
+            await github.rest.pulls.update({
+              owner, repo, pull_number: pr.number, state: "closed"
+            });
+
+      - name: Email notification on failure (SendGrid)
+        if: failure()
+        run: |
+          curl -sS -X POST https://api.sendgrid.com/v3/mail/send \
+            -H "Authorization: Bearer $SENDGRID_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "personalizations": [{"to": [{"email": "'"$ALERT_EMAIL_TO"'"}]}],
+              "from": {"email": "'"$ALERT_EMAIL_FROM"'"},
+              "subject": "PR closed: Conventional Commits required",
+              "content": [{
+                "type": "text/plain",
+                "value": "A pull request was closed because its title did not follow Conventional Commits. Repo: '"${{ github.repository }}"', PR: '"${{ github.event.pull_request.html_url }}"'"
+              }]
+            }'
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
