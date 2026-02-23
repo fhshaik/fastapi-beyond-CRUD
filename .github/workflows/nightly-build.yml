@@ -59,6 +59,7 @@ jobs:
         id: meta
         run: |
           echo "DATE_TAG=$(date -u +'%Y%m%d')" >> $GITHUB_OUTPUT
+          echo "REPO_LC=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Build and push (only after tests pass)
         uses: docker/build-push-action@v6
@@ -67,8 +68,8 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:nightly
-            ghcr.io/${{ github.repository }}:nightly-${{ steps.meta.outputs.DATE_TAG }}
+            ghcr.io/${{ steps.meta.outputs.REPO_LC }}:nightly
+            ghcr.io/${{ steps.meta.outputs.REPO_LC }}:nightly-${{ steps.meta.outputs.DATE_TAG }}
 
       - name: Email on failure (SendGrid)
         if: failure()
